@@ -42,9 +42,9 @@
       <select id="source-select">
         <option value="aa">Anadolu Ajansı (Güncel)</option>
         <option value="trt">TRT Haber (Son Dakika)</option>
-        <option value="haber7">Haber 7 (Gündem)</option>
-        <option value="aljazeera_tr">El Cezire (Türkçe)</option>
+        <option value="haber7">Haber 7 (Son Dakika)</option>
         <option value="trtarabic">TRT Arabi (عربي)</option>
+        <option value="aljazeera">Al Jazeera (English)</option>
       </select>
       <button id="fetch-btn" onclick="fetchFeed()">Getir</button>
     </div>
@@ -58,8 +58,8 @@
       'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
       'trt': 'https://www.trthaber.com/sondakika.rss',
       'haber7': 'https://rss.haber7.com/rss/haber7.xml',
-      'aljazeera_tr': 'https://www.aljazeera.com.tr/rss.xml',
-      'trtarabic': 'https://www.trtarabi.com/rss'
+      'trtarabic': 'https://www.trtarabi.com/rss',
+      'aljazeera': 'https://www.aljazeera.com/xml/rss/all.xml'
     };
 
     function cleanHTML(rawHtml) {
@@ -79,85 +79,52 @@
       const btn = document.getElementById('fetch-btn');
 
       statusEl.className = "status";
-      statusEl.innerText = "Haberler getiriliyor...";
+      statusEl.innerText = "Haberler yükleniyor...";
       containerEl.innerHTML = '';
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
-      // Doğrudan rss2json API üzerinden garantili çekim
-      const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&api_key=public&count=15`;
-
       try {
-        const response = await fetch(apiUrl);
+        // Doğrudan XML içeriğini bypass eden proxy tüneli
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
+        const response = await fetch(proxyUrl);
         const data = await response.json();
 
-        if (data.status === 'ok' && data.items && data.items.length > 0) {
-          statusEl.innerText = `${data.items.length} adet yeni haber yüklendi.`;
+        if (data.contents) {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(data.contents, "text/xml");
+          const items = xmlDoc.querySelectorAll("item");
 
-          data.items.forEach(item => {
-            const cleanText = cleanHTML(item.description || item.content);
-            const titleText = item.title ? item.title.trim() : '';
-            
-            let dateStr = '';
-            if (item.pubDate) {
-              const d = new Date(item.pubDate);
-              if (!isNaN(d.getTime())) {
-                dateStr = d.toLocaleString('tr-TR');
-              }
-            }
+          if (items.length > 0) {
+            statusEl.innerText = `${items.length} adet haber yüklendi.`;
 
-            const card = document.createElement('article');
-            card.className = 'post-card';
-            card.innerHTML = `
-              ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-              <div class="post-text"><strong>${titleText}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
-            `;
-            containerEl.appendChild(card);
-          });
+            items.forEach(item => {
+              const title = item.querySelector("title")?.textContent || "";
+              const desc = item.querySelector("description")?.textContent || item.querySelector("encoded")?.textContent || "";
+              const pubDate = item.querySelector("pubDate")?.textContent || "";
+
+              const cleanText = cleanHTML(desc);
+              const card = document.createElement('article');
+              card.className = 'post-card';
+              card.innerHTML = `
+                ${pubDate ? `<div class="post-date">${pubDate}</div>` : ''}
+                <div class="post-text"><strong>${title.trim()}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
+              `;
+              containerEl.appendChild(card);
+            });
+          } else {
+            throw new Error("İçerik ayrıştırılamadı");
+          }
         } else {
-          // Yedek proxy ile XML okuma
-          await fetchFallback(rssUrl, containerEl, statusEl);
+          throw new Error("Boş yanıt");
         }
       } catch (err) {
-        await fetchFallback(rssUrl, containerEl, statusEl);
+        statusEl.className = "status error";
+        statusEl.innerText = "Haberler çekilemedi. Kaynak sunucusu isteği engelliyor olabilir.";
       }
 
       btn.disabled = false;
       btn.style.opacity = "1";
-    }
-
-    async function fetchFallback(rssUrl, containerEl, statusEl) {
-      try {
-        const fallbackUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rssUrl)}`;
-        const res = await fetch(fallbackUrl);
-        const xmlText = await res.text();
-        const parser = new DOMParser();
-        const xml = parser.parseFromString(xmlText, "text/xml");
-        const items = xml.querySelectorAll("item");
-
-        if (items.length > 0) {
-          statusEl.innerText = `${items.length} adet haber yüklendi.`;
-          items.forEach(item => {
-            const title = item.querySelector("title")?.textContent || "";
-            const desc = item.querySelector("description")?.textContent || "";
-            const pubDate = item.querySelector("pubDate")?.textContent || "";
-
-            const cleanText = cleanHTML(desc);
-            const card = document.createElement('article');
-            card.className = 'post-card';
-            card.innerHTML = `
-              ${pubDate ? `<div class="post-date">${pubDate}</div>` : ''}
-              <div class="post-text"><strong>${title.trim()}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
-            `;
-            containerEl.appendChild(card);
-          });
-        } else {
-          throw new Error("Boş veri");
-        }
-      } catch (e) {
-        statusEl.className = "status error";
-        statusEl.innerText = "Bu kaynak şu an yanıt vermiyor, lütfen listedeki diğer kaynakları deneyin.";
-      }
     }
 
     window.onload = fetchFeed;
