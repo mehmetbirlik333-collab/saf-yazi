@@ -89,19 +89,18 @@
       btn.style.opacity = "0.5";
 
       try {
-        // Doğrudan kendi Google Tünelinden XML içeriği çekme
+        // 1. DENE: Google Apps Script Tüneli
         const response = await fetch(`${GOOGLE_SCRIPT_URL}?url=${encodeURIComponent(rssUrl)}`);
         const xmlText = await response.text();
 
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        // RSS item / Atom entry kontrolü
         const items = xmlDoc.querySelectorAll("item");
         const entries = xmlDoc.querySelectorAll("entry");
 
         if (items.length > 0) {
-          statusEl.innerText = `${items.length} adet yeni içerik yüklendi.`;
+          statusEl.innerText = `${items.length} adet içerik yüklendi.`;
           items.forEach(item => {
             const title = item.querySelector("title")?.textContent || "";
             const desc = item.querySelector("description")?.textContent || item.querySelector("encoded")?.textContent || "";
@@ -115,9 +114,10 @@
 
             renderCard(title, cleanHTML(desc), dateStr, containerEl);
           });
+          btn.disabled = false; btn.style.opacity = "1";
+          return;
         } else if (entries.length > 0) {
-          // YouTube (Atom XML) Akışı
-          statusEl.innerText = `${entries.length} adet yeni video/açıklama yüklendi.`;
+          statusEl.innerText = `${entries.length} adet içerik/video yüklendi.`;
           entries.forEach(entry => {
             const title = entry.querySelector("title")?.textContent || "";
             const pubDate = entry.querySelector("published")?.textContent || "";
@@ -131,19 +131,33 @@
               if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
             }
 
-            renderCard(title, desc.trim(), dateStr, containerEl);
+            renderCard(title, desc ? desc.trim() : '', dateStr, containerEl);
           });
-        } else {
-          throw new Error("İçerik ayrıştırılamadı");
+          btn.disabled = false; btn.style.opacity = "1";
+          return;
         }
-
       } catch (err) {
-        statusEl.className = "status error";
-        statusEl.innerText = "İçerik çekilemedi, lütfen tekrar deneyin.";
+        console.warn("Ana tünel yanıt vermedi, yedek deneniyor...");
       }
 
-      btn.disabled = false;
-      btn.style.opacity = "1";
+      // 2. DENE: Yedek rss2json Servisi
+      try {
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
+        const data = await res.json();
+        if (data.status === 'ok' && data.items && data.items.length > 0) {
+          statusEl.innerText = `${data.items.length} adet içerik yüklendi.`;
+          data.items.forEach(item => {
+            let dateStr = item.pubDate ? new Date(item.pubDate).toLocaleString('tr-TR') : '';
+            renderCard(item.title, cleanHTML(item.description || item.content), dateStr, containerEl);
+          });
+          btn.disabled = false; btn.style.opacity = "1";
+          return;
+        }
+      } catch (e) {}
+
+      statusEl.className = "status error";
+      statusEl.innerText = "İçerik çekilemedi. Lütfen sayfayı yenileyip tekrar deneyin.";
+      btn.disabled = false; btn.style.opacity = "1";
     }
 
     function renderCard(title, desc, dateStr, containerEl) {
