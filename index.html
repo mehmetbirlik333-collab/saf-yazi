@@ -55,8 +55,6 @@
   <main class="feed-list" id="feed-container"></main>
 
   <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbym5nnTUfHWQgfyL4EykqGdXVHkOz4G8xaMMYbc4ybCKq4YZmGw6QVqG8yI8aTQS1L0/exec";
-
     const SOURCES = {
       'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
       'trt': 'https://www.trthaber.com/sondakika.rss',
@@ -75,7 +73,7 @@
       return temp.innerText.trim();
     }
 
-    async function fetchFeed() {
+    function fetchFeed() {
       const selectedKey = document.getElementById('source-select').value;
       const rssUrl = SOURCES[selectedKey];
       const statusEl = document.getElementById('status-text');
@@ -88,86 +86,61 @@
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
-      try {
-        // 1. DENE: Google Apps Script Tüneli
-        const response = await fetch(`${GOOGLE_SCRIPT_URL}?url=${encodeURIComponent(rssUrl)}`);
-        const xmlText = await response.text();
+      // Benzersiz callback fonksiyon adı oluşturuluyor
+      const callbackName = 'rss_callback_' + Math.floor(Math.random() * 1000000);
 
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+      // JSONP Callback Fonksiyonu
+      window[callbackName] = function(data) {
+        // Temizlik
+        delete window[callbackName];
+        const oldScript = document.getElementById('jsonp-script');
+        if (oldScript) oldScript.remove();
 
-        const items = xmlDoc.querySelectorAll("item");
-        const entries = xmlDoc.querySelectorAll("entry");
+        btn.disabled = false;
+        btn.style.opacity = "1";
 
-        if (items.length > 0) {
-          statusEl.innerText = `${items.length} adet içerik yüklendi.`;
-          items.forEach(item => {
-            const title = item.querySelector("title")?.textContent || "";
-            const desc = item.querySelector("description")?.textContent || item.querySelector("encoded")?.textContent || "";
-            const pubDate = item.querySelector("pubDate")?.textContent || "";
+        if (data && data.status === 'ok' && data.items && data.items.length > 0) {
+          statusEl.innerText = `${data.items.length} adet yeni içerik yüklendi.`;
 
-            let dateStr = '';
-            if (pubDate) {
-              const d = new Date(pubDate);
-              if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
-            }
-
-            renderCard(title, cleanHTML(desc), dateStr, containerEl);
-          });
-          btn.disabled = false; btn.style.opacity = "1";
-          return;
-        } else if (entries.length > 0) {
-          statusEl.innerText = `${entries.length} adet içerik/video yüklendi.`;
-          entries.forEach(entry => {
-            const title = entry.querySelector("title")?.textContent || "";
-            const pubDate = entry.querySelector("published")?.textContent || "";
-            
-            const mediaGroup = entry.getElementsByTagNameNS("http://search.yahoo.com/mrss/", "group")[0];
-            const desc = mediaGroup ? mediaGroup.getElementsByTagNameNS("http://search.yahoo.com/mrss/", "description")[0]?.textContent : "";
-
-            let dateStr = '';
-            if (pubDate) {
-              const d = new Date(pubDate);
-              if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
-            }
-
-            renderCard(title, desc ? desc.trim() : '', dateStr, containerEl);
-          });
-          btn.disabled = false; btn.style.opacity = "1";
-          return;
-        }
-      } catch (err) {
-        console.warn("Ana tünel yanıt vermedi, yedek deneniyor...");
-      }
-
-      // 2. DENE: Yedek rss2json Servisi
-      try {
-        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
-        const data = await res.json();
-        if (data.status === 'ok' && data.items && data.items.length > 0) {
-          statusEl.innerText = `${data.items.length} adet içerik yüklendi.`;
           data.items.forEach(item => {
-            let dateStr = item.pubDate ? new Date(item.pubDate).toLocaleString('tr-TR') : '';
-            renderCard(item.title, cleanHTML(item.description || item.content), dateStr, containerEl);
+            const cleanText = cleanHTML(item.description || item.content);
+            const titleText = item.title ? item.title.trim() : '';
+
+            let dateStr = '';
+            if (item.pubDate) {
+              const d = new Date(item.pubDate);
+              if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
+            }
+
+            const card = document.createElement('article');
+            card.className = 'post-card';
+            card.innerHTML = `
+              ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
+              <div class="post-text"><strong>${titleText}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
+            `;
+            containerEl.appendChild(card);
           });
-          btn.disabled = false; btn.style.opacity = "1";
-          return;
+        } else {
+          statusEl.className = "status error";
+          statusEl.innerText = "İçerik alınamadı. Lütfen listeden başka bir kaynak deneyin.";
         }
-      } catch (e) {}
+      };
 
-      statusEl.className = "status error";
-      statusEl.innerText = "İçerik çekilemedi. Lütfen sayfayı yenileyip tekrar deneyin.";
-      btn.disabled = false; btn.style.opacity = "1";
-    }
+      // Dinamik Script Etiketi Oluşturma (CORS Engelini Aşar)
+      const script = document.createElement('script');
+      script.id = 'jsonp-script';
+      script.src = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&callback=${callbackName}`;
+      
+      script.onerror = function() {
+        delete window[callbackName];
+        script.remove();
+        btn.disabled = false;
+        btn.style.opacity = "1";
+        statusEl.className = "status error";
+        statusEl.innerText = "Bağlantı hatası oluştu, lütfen tekrar deneyin.";
+      };
 
-    function renderCard(title, desc, dateStr, containerEl) {
-      const card = document.createElement('article');
-      card.className = 'post-card';
-      card.innerHTML = `
-        ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-        <div class="post-text"><strong>${title.trim()}</strong>${desc ? `\n\n${desc}` : ''}</div>
-      `;
-      containerEl.appendChild(card);
+      document.body.appendChild(script);
     }
 
     window.onload = fetchFeed;
