@@ -55,6 +55,9 @@
   <main class="feed-list" id="feed-container"></main>
 
   <script>
+    // Senin özel Google Apps Script tünelin
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbym5nnTUfHWQgfyL4EykqGdXVHkOz4G8xaMMYbc4ybCKq4YZmGw6QVqG8yI8aTQS1L0/exec";
+
     const SOURCES = {
       'cubbeli_yt': 'https://www.youtube.com/feeds/videos.xml?channel_id=UC43i8xG4ySsm_Xk5S9B1oag',
       'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
@@ -87,50 +90,14 @@
       btn.style.opacity = "0.5";
 
       try {
-        // YouTube veya Haber siteleri için CORS engelini aşan güvenli API tüneli
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-        const response = await fetch(proxyUrl);
-        const data = await response.json();
-
-        if (data.status === 'ok' && data.items && data.items.length > 0) {
-          statusEl.innerText = `${data.items.length} adet içerik yüklendi.`;
-          data.items.forEach(item => {
-            const title = item.title ? item.title.trim() : '';
-            const desc = cleanHTML(item.description || item.content);
-            
-            let dateStr = '';
-            if (item.pubDate) {
-              const d = new Date(item.pubDate);
-              if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
-            }
-
-            renderCard(title, desc, dateStr, containerEl);
-          });
-        } else {
-          // Eğer rss2json YouTube'u okuyamazsa alternatif doğrudan XML okuyucu devreye girer
-          await fetchDirectXML(rssUrl, statusEl, containerEl);
-        }
-      } catch (err) {
-        await fetchDirectXML(rssUrl, statusEl, containerEl);
-      }
-
-      btn.disabled = false;
-      btn.style.opacity = "1";
-    }
-
-    async function fetchDirectXML(rssUrl, statusEl, containerEl) {
-      try {
-        const corsProxy = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`;
-        const res = await fetch(corsProxy);
-        const json = await res.json();
-        
-        if (!json.contents) throw new Error("Veri alınamadı");
+        const response = await fetch(`${GOOGLE_SCRIPT_URL}?url=${encodeURIComponent(rssUrl)}`);
+        const xmlText = await response.text();
 
         const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(json.contents, "text/xml");
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
 
-        const entries = xmlDoc.querySelectorAll("entry"); // YouTube Atom formatı
-        const items = xmlDoc.querySelectorAll("item"); // Standart RSS formatı
+        const entries = xmlDoc.querySelectorAll("entry"); // YouTube Atom
+        const items = xmlDoc.querySelectorAll("item"); // Standart RSS
 
         if (entries.length > 0) {
           statusEl.innerText = `${entries.length} adet video yüklendi.`;
@@ -157,7 +124,7 @@
           statusEl.innerText = `${items.length} adet içerik yüklendi.`;
           items.forEach(item => {
             const title = item.querySelector("title")?.textContent || "";
-            const desc = item.querySelector("description")?.textContent || "";
+            const desc = item.querySelector("description")?.textContent || item.querySelector("encoded")?.textContent || "";
             const pubDate = item.querySelector("pubDate")?.textContent || "";
 
             let dateStr = '';
@@ -169,12 +136,15 @@
             renderCard(title, cleanHTML(desc), dateStr, containerEl);
           });
         } else {
-          throw new Error("Akış boş");
+          throw new Error("Boş veri");
         }
       } catch (e) {
         statusEl.className = "status error";
-        statusEl.innerText = "İçerik çekilemedi. Lütfen tekrar deneyin.";
+        statusEl.innerText = "İçerik çekilemedi, lütfen tekrar deneyin.";
       }
+
+      btn.disabled = false;
+      btn.style.opacity = "1";
     }
 
     function renderCard(title, desc, dateStr, containerEl) {
