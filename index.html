@@ -20,9 +20,8 @@
     header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
     h1 { font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px; }
     
-    .controls { display: flex; gap: 8px; }
-    input[type="text"] { flex: 1; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 14px; border-radius: 8px; font-size: 0.95rem; outline: none; }
-    input[type="text"]:focus { border-color: var(--accent); }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+    select { flex: 1; min-width: 200px; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 14px; border-radius: 8px; font-size: 0.95rem; outline: none; }
     button { background: var(--accent); color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
     button:active { opacity: 0.8; }
     
@@ -40,124 +39,76 @@
   <header>
     <h1>Saf Yazı Akışı</h1>
     <div class="controls">
-      <input type="text" id="username-input" placeholder="Kullanıcı adı" value="c_ahmethoca">
+      <select id="source-select">
+        <option value="aa">Anadolu Ajansı (Güncel)</option>
+        <option value="haber7">Haber 7 (Manşet)</option>
+        <option value="aljazeera">El Cezire (Türkçe)</option>
+        <option value="trt">TRT Haber (Son Dakika)</option>
+        <option value="trtarabic">TRT Arabic (عربي)</option>
+      </select>
       <button id="fetch-btn" onclick="fetchFeed()">Getir</button>
     </div>
-    <div class="status" id="status-text">Yükleniyor...</div>
+    <div class="status" id="status-text">Kaynak seçip "Getir" butonuna basın.</div>
   </header>
 
   <main class="feed-list" id="feed-container"></main>
 
   <script>
-    // Zaman aşımı (Timeout) destekli özel Fetch fonksiyonu
-    async function fetchWithTimeout(resource, options = {}) {
-      const { timeout = 8000 } = options; // 8 saniye bekle, sonra iptal et
-      const controller = new AbortController();
-      const id = setTimeout(() => controller.abort(), timeout);
-      const response = await fetch(resource, { ...options, signal: controller.signal });
-      clearTimeout(id);
-      return response;
-    }
+    const SOURCES = {
+      'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
+      'haber7': 'https://rss.haber7.com/rss/haber7.xml',
+      'aljazeera': 'https://www.aljazeera.com.tr/rss.xml',
+      'trt': 'https://www.trthaber.com/sondakika.rss',
+      'trtarabic': 'https://www.trtarabi.com/rss'
+    };
 
     async function fetchFeed() {
-      let username = document.getElementById('username-input').value.trim();
+      const selectedKey = document.getElementById('source-select').value;
+      const rssUrl = SOURCES[selectedKey];
       const statusEl = document.getElementById('status-text');
       const containerEl = document.getElementById('feed-container');
       const btn = document.getElementById('fetch-btn');
 
-      if (username.startsWith('@')) username = username.substring(1);
-      if (!username) {
-        statusEl.innerText = "Lütfen kullanıcı adı girin.";
-        statusEl.className = "status error";
-        return;
-      }
-
       statusEl.className = "status";
-      statusEl.innerText = `@${username} paylaşımları sorgulanıyor... Lütfen bekleyin.`;
+      statusEl.innerText = "Haberler getiriliyor...";
       containerEl.innerHTML = '';
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
-      // Test maksatlı çalışır bir haber RSS'i eklendi (Kullanıcı adı "test" yazılırsa)
-      let proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://rsshub.app/twitter/user/${username}`)}`,
-        `https://corsproxy.io/?${encodeURIComponent(`https://nitter.privacydev.net/${username}/rss`)}`
-      ];
+      const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
 
-      if (username.toLowerCase() === "test") {
-        proxies = [`https://api.rss2json.com/v1/api.json?rss_url=https://www.donanimhaber.com/rss/anasayfa`];
-        statusEl.innerText = "Sistemin çalıştığını göstermek için test akışı getiriliyor...";
-      }
+      try {
+        const response = await fetch(apiUrl);
+        const data = await response.json();
 
-      let success = false;
+        if (data.status === 'ok' && data.items.length > 0) {
+          statusEl.innerText = `${data.items.length} adet yeni haber yüklendi.`;
 
-      for (const url of proxies) {
-        if (success) break;
+          data.items.forEach(item => {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = item.description || item.title;
 
-        try {
-          const response = await fetchWithTimeout(url, { timeout: 7000 });
-          let items = [];
+            const mediaElements = tempDiv.querySelectorAll('img, video, iframe, a, style, script');
+            mediaElements.forEach(el => el.remove());
 
-          if (url.includes('rss2json')) {
-            const data = await response.json();
-            if (data.status === 'ok') items = data.items;
-          } else {
-            const xmlText = await response.text();
-            
-            // Twitter engellediyse HTML döner, bunu engelle
-            if(xmlText.includes('<html') && !xmlText.includes('<rss')) {
-                throw new Error("Twitter/Platform Erişimi Engelledi");
-            }
+            const cleanText = tempDiv.innerText.trim();
+            const titleText = item.title ? item.title.trim() : '';
+            const dateStr = item.pubDate ? new Date(item.pubDate).toLocaleString('tr-TR') : '';
 
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-            const xmlItems = xmlDoc.querySelectorAll("item");
-            
-            xmlItems.forEach(item => {
-              items.push({
-                title: item.querySelector("title")?.textContent || "",
-                description: item.querySelector("description")?.textContent || "",
-                pubDate: item.querySelector("pubDate")?.textContent || ""
-              });
-            });
-          }
-
-          if (items && items.length > 0) {
-            statusEl.innerText = `${username} için ${items.length} içerik listelendi.`;
-            statusEl.className = "status";
-
-            items.forEach(item => {
-              const tempDiv = document.createElement('div');
-              tempDiv.innerHTML = item.description || item.title;
-
-              // Görsel ve medyaları gizle/temizle
-              const mediaElements = tempDiv.querySelectorAll('img, video, iframe, a, style, script');
-              mediaElements.forEach(el => el.remove());
-
-              const cleanText = tempDiv.innerText.trim();
-              const dateStr = item.pubDate ? new Date(item.pubDate).toLocaleString('tr-TR') : '';
-
-              if (cleanText.length > 0 && cleanText !== "RT") {
-                const card = document.createElement('article');
-                card.className = 'post-card';
-                card.innerHTML = `
-                  ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-                  <div class="post-text">${cleanText}</div>
-                `;
-                containerEl.appendChild(card);
-              }
-            });
-
-            success = true;
-          }
-        } catch (err) {
-          console.warn("Sunucu yanıt vermedi veya engellendi.");
+            const card = document.createElement('article');
+            card.className = 'post-card';
+            card.innerHTML = `
+              ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
+              <div class="post-text"><strong>${titleText}</strong>\n\n${cleanText}</div>
+            `;
+            containerEl.appendChild(card);
+          });
+        } else {
+          throw new Error("Veri çekilemedi");
         }
-      }
-
-      if (!success) {
+      } catch (err) {
         statusEl.className = "status error";
-        statusEl.innerText = `Bağlantı engellendi: Sosyal medya platformu şifresiz erişime izin vermiyor veya sunucular meşgul.`;
+        statusEl.innerText = "Haberler çekilirken bir sorun oluştu, lütfen tekrar deneyin.";
       }
 
       btn.disabled = false;
