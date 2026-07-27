@@ -41,10 +41,10 @@
     <div class="controls">
       <select id="source-select">
         <option value="aa">Anadolu Ajansı (Güncel)</option>
-        <option value="haber7">Haber 7 (Manşet)</option>
-        <option value="aljazeera">El Cezire (Türkçe)</option>
+        <option value="haber7">Haber 7 (Son Dakika)</option>
+        <option value="aljazeera">Al Jazeera (English)</option>
         <option value="trt">TRT Haber (Son Dakika)</option>
-        <option value="trtarabic">TRT Arabic (عربي)</option>
+        <option value="trtarabic">TRT Arabi (عربي)</option>
       </select>
       <button id="fetch-btn" onclick="fetchFeed()">Getir</button>
     </div>
@@ -57,7 +57,7 @@
     const SOURCES = {
       'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
       'haber7': 'https://rss.haber7.com/rss/haber7.xml',
-      'aljazeera': 'https://www.aljazeera.com.tr/rss.xml',
+      'aljazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
       'trt': 'https://www.trthaber.com/sondakika.rss',
       'trtarabic': 'https://www.trtarabi.com/rss'
     };
@@ -70,7 +70,7 @@
       const btn = document.getElementById('fetch-btn');
 
       statusEl.className = "status";
-      statusEl.innerText = "Haberler getiriliyor...";
+      statusEl.innerText = "Haberler çekiliyor...";
       containerEl.innerHTML = '';
       btn.disabled = true;
       btn.style.opacity = "0.5";
@@ -81,12 +81,12 @@
         const response = await fetch(apiUrl);
         const data = await response.json();
 
-        if (data.status === 'ok' && data.items.length > 0) {
+        if (data.status === 'ok' && data.items && data.items.length > 0) {
           statusEl.innerText = `${data.items.length} adet yeni haber yüklendi.`;
 
           data.items.forEach(item => {
             const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = item.description || item.title;
+            tempDiv.innerHTML = item.description || item.content || item.title;
 
             const mediaElements = tempDiv.querySelectorAll('img, video, iframe, a, style, script');
             mediaElements.forEach(el => el.remove());
@@ -104,11 +104,11 @@
             containerEl.appendChild(card);
           });
         } else {
-          throw new Error("Veri çekilemedi");
+          throw new Error("Veri bulunamadı");
         }
       } catch (err) {
         statusEl.className = "status error";
-        statusEl.innerText = "Haberler çekilirken bir sorun oluştu, lütfen tekrar deneyin.";
+        statusEl.innerText = "Bu haber kaynağı şu an yanıt vermiyor, lütfen listedeki başka bir kaynağı deneyin.";
       }
 
       btn.disabled = false;
