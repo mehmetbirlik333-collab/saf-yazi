@@ -55,11 +55,11 @@
 
   <script>
     const SOURCES = {
-      'aa': { type: 'rss', url: 'https://www.aa.com.tr/tr/rss/default?cat=guncel' },
-      'trt': { type: 'rss', url: 'https://www.trthaber.com/sondakika.rss' },
-      'cubbeli_yt': { type: 'yt', channelId: 'UC43i8xG4ySsm_Xk5S9B1oag' },
-      'trt_spor': { type: 'rss', url: 'https://www.trtspor.com.tr/rss/' },
-      'trt_world': { type: 'rss', url: 'https://www.trtworld.com/rss' }
+      'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
+      'trt': 'https://www.trthaber.com/sondakika.rss',
+      'cubbeli_yt': 'https://www.youtube.com/feeds/videos.xml?channel_id=UC43i8xG4ySsm_Xk5S9B1oag',
+      'trt_spor': 'https://www.trtspor.com.tr/rss/',
+      'trt_world': 'https://www.trtworld.com/rss'
     };
 
     function cleanHTML(rawHtml) {
@@ -71,60 +71,46 @@
       return temp.innerText.trim();
     }
 
+    // JSONP yöntemiyle CORS engellerini tamamen aşan çağrı
+    function fetchJSONP(url, callbackName) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        const scriptUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&callback=${callbackName}`;
+        
+        window[callbackName] = (data) => {
+          delete window[callbackName];
+          document.body.removeChild(script);
+          resolve(data);
+        };
+
+        script.onerror = () => {
+          delete window[callbackName];
+          if (document.body.contains(script)) document.body.removeChild(script);
+          reject(new Error('Yükleme hatası'));
+        };
+
+        script.src = scriptUrl;
+        document.body.appendChild(script);
+      });
+    }
+
     async function fetchFeed() {
       const selectedKey = document.getElementById('source-select').value;
-      const source = SOURCES[selectedKey];
+      const rssUrl = SOURCES[selectedKey];
       const statusEl = document.getElementById('status-text');
       const containerEl = document.getElementById('feed-container');
       const btn = document.getElementById('fetch-btn');
 
       statusEl.className = "status";
-      statusEl.innerText = "Yazılar getiriliyor...";
+      statusEl.innerText = "İçerik getiriliyor...";
       containerEl.innerHTML = '';
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
-      // YOUTUBE ÇEKİM MANTIĞI (Doğrudan Invidious API)
-      if (source.type === 'yt') {
-        try {
-          const res = await fetch(`https://invidious.nerdvpn.de/api/v1/channels/${source.channelId}/videos`);
-          const data = await res.json();
+      const cbName = 'cb_' + Math.random().toString(36).substring(2, 9);
 
-          if (data && data.length > 0) {
-            statusEl.innerText = `${data.length} adet son paylaşım yüklendi.`;
-
-            data.forEach(item => {
-              const titleText = item.title ? item.title.trim() : '';
-              const descText = item.description ? item.description.trim() : '';
-              
-              let dateStr = '';
-              if (item.published) {
-                const d = new Date(item.published * 1000);
-                if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
-              }
-
-              const card = document.createElement('article');
-              card.className = 'post-card';
-              card.innerHTML = `
-                ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-                <div class="post-text"><strong>${titleText}</strong>${descText ? `\n\n${descText}` : ''}</div>
-              `;
-              containerEl.appendChild(card);
-            });
-
-            btn.disabled = false;
-            btn.style.opacity = "1";
-            return;
-          }
-        } catch (e) {
-          console.warn("YouTube verisi çekilemedi.");
-        }
-      }
-
-      // STANDART RSS HABER SİTELERİ ÇEKİM MANTIĞI
       try {
-        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}`);
-        const data = await res.json();
+        const data = await fetchJSONP(rssUrl, cbName);
 
         if (data.status === 'ok' && data.items && data.items.length > 0) {
           statusEl.innerText = `${data.items.length} adet yeni içerik yüklendi.`;
@@ -150,9 +136,9 @@
         } else {
           throw new Error("Veri bulunamadı");
         }
-      } catch (e) {
+      } catch (err) {
         statusEl.className = "status error";
-        statusEl.innerText = "İçerik çekilirken bir sorun oluştu, lütfen listedeki diğer kaynakları deneyin.";
+        statusEl.innerText = "Bağlantı zaman aşımına uğradı, lütfen tekrar deneyin veya başka kaynak seçin.";
       }
 
       btn.disabled = false;
