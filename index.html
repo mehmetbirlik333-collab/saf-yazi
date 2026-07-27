@@ -42,9 +42,9 @@
       <select id="source-select">
         <option value="aa">Anadolu Ajansı (Güncel)</option>
         <option value="trt">TRT Haber (Son Dakika)</option>
-        <option value="haber7">Haber 7 (Gündem)</option>
-        <option value="aljazeera">Al Jazeera (English)</option>
-        <option value="trtarabi">TRT Arabi (عربي)</option>
+        <option value="cubbeli_yt">Cübbeli Ahmet Hoca (YouTube)</option>
+        <option value="trt_spor">TRT Spor (Son Dakika)</option>
+        <option value="trt_world">TRT World (English)</option>
       </select>
       <button id="fetch-btn" onclick="fetchFeed()">Getir</button>
     </div>
@@ -57,9 +57,9 @@
     const SOURCES = {
       'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
       'trt': 'https://www.trthaber.com/sondakika.rss',
-      'haber7': 'https://rss.haber7.com/rss/haber7.xml',
-      'aljazeera': 'https://www.aljazeera.com/xml/rss/all.xml',
-      'trtarabi': 'https://www.trtarabi.com/rss'
+      'cubbeli_yt': 'https://www.youtube.com/feeds/videos.xml?channel_id=UC43i8xG4ySsm_Xk5S9B1oag',
+      'trt_spor': 'https://www.trtspor.com.tr/rss/',
+      'trt_world': 'https://www.trtworld.com/rss'
     };
 
     function cleanHTML(rawHtml) {
@@ -79,92 +79,48 @@
       const btn = document.getElementById('fetch-btn');
 
       statusEl.className = "status";
-      statusEl.innerText = "Haberler yükleniyor...";
+      statusEl.innerText = "Yazılar getiriliyor...";
       containerEl.innerHTML = '';
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
-      // 1. Yöntem: Doğrudan rss2json servisi
       try {
         const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
         const data = await res.json();
 
         if (data.status === 'ok' && data.items && data.items.length > 0) {
-          renderItems(data.items.map(i => ({
-            title: i.title,
-            desc: i.description || i.content,
-            date: i.pubDate
-          })), containerEl, statusEl);
-          btn.disabled = false;
-          btn.style.opacity = "1";
-          return;
+          statusEl.innerText = `${data.items.length} adet yeni paylaşım yüklendi.`;
+
+          data.items.forEach(item => {
+            const cleanText = cleanHTML(item.description || item.content);
+            const titleText = item.title ? item.title.trim() : '';
+
+            let dateStr = '';
+            if (item.pubDate) {
+              const d = new Date(item.pubDate);
+              if (!isNaN(d.getTime())) {
+                dateStr = d.toLocaleString('tr-TR');
+              }
+            }
+
+            const card = document.createElement('article');
+            card.className = 'post-card';
+            card.innerHTML = `
+              ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
+              <div class="post-text"><strong>${titleText}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
+            `;
+            containerEl.appendChild(card);
+          });
+        } else {
+          throw new Error("Veri bulunamadı");
         }
       } catch (e) {
-        console.warn("rss2json başarısız oldu, yedek servise geçiliyor...");
+        statusEl.className = "status error";
+        statusEl.innerText = "İçerik çekilirken bir sorun oluştu, lütfen listedeki diğer kaynakları deneyin.";
       }
 
-      // 2. Yöntem: AllOrigins yedek servisi
-      try {
-        const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`);
-        const data = await res.json();
-        
-        if (data.contents) {
-          const parser = new DOMParser();
-          const xmlDoc = parser.parseFromString(data.contents, "text/xml");
-          const xmlItems = xmlDoc.querySelectorAll("item");
-
-          if (xmlItems.length > 0) {
-            const parsedList = [];
-            xmlItems.forEach(item => {
-              parsedList.push({
-                title: item.querySelector("title")?.textContent || "",
-                desc: item.querySelector("description")?.textContent || item.querySelector("encoded")?.textContent || "",
-                date: item.querySelector("pubDate")?.textContent || ""
-              });
-            });
-
-            renderItems(parsedList, containerEl, statusEl);
-            btn.disabled = false;
-            btn.style.opacity = "1";
-            return;
-          }
-        }
-      } catch (e) {
-        console.warn("Yedek servis de başarısız oldu.");
-      }
-
-      // İki yöntem de başarısız olursa
-      statusEl.className = "status error";
-      statusEl.innerText = "Bu kaynak şu an yanıt vermiyor, lütfen listeden başka bir haber kaynağı seçin.";
       btn.disabled = false;
       btn.style.opacity = "1";
-    }
-
-    function renderItems(items, containerEl, statusEl) {
-      statusEl.innerText = `${items.length} adet haber yüklendi.`;
-
-      items.forEach(item => {
-        const cleanText = cleanHTML(item.desc);
-        const titleText = item.title ? item.title.trim() : '';
-
-        let dateStr = '';
-        if (item.date) {
-          const d = new Date(item.date);
-          if (!isNaN(d.getTime())) {
-            dateStr = d.toLocaleString('tr-TR');
-          } else {
-            dateStr = item.date;
-          }
-        }
-
-        const card = document.createElement('article');
-        card.className = 'post-card';
-        card.innerHTML = `
-          ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-          <div class="post-text"><strong>${titleText}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
-        `;
-        containerEl.appendChild(card);
-      });
     }
 
     window.onload = fetchFeed;
