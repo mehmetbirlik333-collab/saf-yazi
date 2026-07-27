@@ -2,148 +2,63 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Saf Yazı Akışı</title>
   <style>
-    :root {
-      --bg-color: #0f1419;
-      --card-bg: #15202b;
-      --border-color: #38444d;
-      --text-main: #f7f9f9;
-      --text-muted: #8b98a5;
-      --accent: #1d9bf0;
-      --error: #f4212e;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { background-color: var(--bg-color); color: var(--text-main); padding: 16px; max-width: 680px; margin: 0 auto; line-height: 1.5; }
-    header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color); }
-    h1 { font-size: 1.25rem; font-weight: 700; color: var(--text-main); margin-bottom: 12px; }
-    
-    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
-    select { flex: 1; min-width: 200px; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-main); padding: 10px 14px; border-radius: 8px; font-size: 0.95rem; outline: none; }
-    button { background: var(--accent); color: #fff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.9rem; }
-    button:active { opacity: 0.8; }
-    
-    .status { font-size: 0.85rem; color: var(--text-muted); margin: 12px 0; }
-    .status.error { color: var(--error); font-weight: bold; }
-    
-    .feed-list { display: flex; flex-direction: column; gap: 12px; }
-    .post-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 10px; padding: 14px; word-break: break-word; }
-    .post-date { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 8px; }
-    .post-text { font-size: 0.95rem; color: var(--text-main); white-space: pre-line; }
+    body { background-color: #0f1419; color: #f7f9f9; padding: 16px; max-width: 680px; margin: 0 auto; font-family: sans-serif; }
+    select, button { padding: 10px; margin-bottom: 15px; background: #15202b; color: #fff; border: 1px solid #38444d; border-radius: 8px; }
+    button { background: #1d9bf0; cursor: pointer; font-weight: bold; }
+    .card { background: #15202b; border: 1px solid #38444d; padding: 14px; border-radius: 10px; margin-bottom: 12px; }
+    .date { font-size: 0.75rem; color: #8b98a5; margin-bottom: 6px; }
   </style>
 </head>
 <body>
 
-  <header>
-    <h1>Saf Yazı Akışı</h1>
-    <div class="controls">
-      <select id="source-select">
-        <option value="aa">Anadolu Ajansı (Güncel)</option>
-        <option value="trt">TRT Haber (Son Dakika)</option>
-        <option value="haber7">Haber 7 (Gündem)</option>
-        <option value="trtarabi">TRT Arabi (عربي)</option>
-        <option value="cubbeli_yt">Cübbeli Ahmet Hoca (YouTube)</option>
-        <option value="trt_spor">TRT Spor (Son Dakika)</option>
-      </select>
-      <button id="fetch-btn" onclick="fetchFeed()">Getir</button>
-    </div>
-    <div class="status" id="status-text">Kaynak seçip "Getir" butonuna basın.</div>
-  </header>
+  <h1>Saf Yazı Akışı</h1>
+  
+  <div>
+    <select id="source">
+      <option value="https://www.aa.com.tr/tr/rss/default?cat=guncel">Anadolu Ajansı</option>
+      <option value="https://www.trthaber.com/sondakika.rss">TRT Haber</option>
+      <option value="https://rss.haber7.com/rss/haber7.xml">Haber 7</option>
+      <option value="https://www.trtspor.com.tr/rss/">TRT Spor</option>
+    </select>
+    <button onclick="getFeed()">Getir</button>
+  </div>
 
-  <main class="feed-list" id="feed-container"></main>
+  <div id="status">Kaynak seçip Getir butonuna basın.</div>
+  <div id="feed"></div>
 
   <script>
-    const SOURCES = {
-      'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
-      'trt': 'https://www.trthaber.com/sondakika.rss',
-      'haber7': 'https://rss.haber7.com/rss/haber7.xml',
-      'trtarabi': 'https://www.trtarabi.com/rss',
-      'cubbeli_yt': 'https://www.youtube.com/feeds/videos.xml?channel_id=UC43i8xG4ySsm_Xk5S9B1oag',
-      'trt_spor': 'https://www.trtspor.com.tr/rss/'
-    };
+    async function getFeed() {
+      const url = document.getElementById('source').value;
+      const status = document.getElementById('status');
+      const feed = document.getElementById('feed');
+      
+      status.innerText = "Yükleniyor...";
+      feed.innerHTML = "";
 
-    function cleanHTML(rawHtml) {
-      if (!rawHtml) return '';
-      const temp = document.createElement('div');
-      temp.innerHTML = rawHtml;
-      const media = temp.querySelectorAll('img, video, iframe, a, style, script, figure');
-      media.forEach(el => el.remove());
-      return temp.innerText.trim();
-    }
+      try {
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
+        const data = await res.json();
 
-    function fetchFeed() {
-      const selectedKey = document.getElementById('source-select').value;
-      const rssUrl = SOURCES[selectedKey];
-      const statusEl = document.getElementById('status-text');
-      const containerEl = document.getElementById('feed-container');
-      const btn = document.getElementById('fetch-btn');
-
-      statusEl.className = "status";
-      statusEl.innerText = "Yazılar getiriliyor...";
-      containerEl.innerHTML = '';
-      btn.disabled = true;
-      btn.style.opacity = "0.5";
-
-      // Benzersiz callback fonksiyon adı oluşturuluyor
-      const callbackName = 'rss_callback_' + Math.floor(Math.random() * 1000000);
-
-      // JSONP Callback Fonksiyonu
-      window[callbackName] = function(data) {
-        // Temizlik
-        delete window[callbackName];
-        const oldScript = document.getElementById('jsonp-script');
-        if (oldScript) oldScript.remove();
-
-        btn.disabled = false;
-        btn.style.opacity = "1";
-
-        if (data && data.status === 'ok' && data.items && data.items.length > 0) {
-          statusEl.innerText = `${data.items.length} adet yeni içerik yüklendi.`;
-
+        if (data.status === 'ok') {
+          status.innerText = `${data.items.length} içerik bulundu.`;
           data.items.forEach(item => {
-            const cleanText = cleanHTML(item.description || item.content);
-            const titleText = item.title ? item.title.trim() : '';
-
-            let dateStr = '';
-            if (item.pubDate) {
-              const d = new Date(item.pubDate);
-              if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
-            }
-
-            const card = document.createElement('article');
-            card.className = 'post-card';
-            card.innerHTML = `
-              ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-              <div class="post-text"><strong>${titleText}</strong>${cleanText ? `\n\n${cleanText}` : ''}</div>
-            `;
-            containerEl.appendChild(card);
+            const div = document.createElement('div');
+            div.className = 'card';
+            div.innerHTML = `<div class="date">${item.pubDate || ''}</div><strong>${item.title}</strong><p style="margin-top:8px; font-size:0.9rem;">${item.description.replace(/<[^>]*>?/gm, '')}</p>`;
+            feed.appendChild(div);
           });
         } else {
-          statusEl.className = "status error";
-          statusEl.innerText = "İçerik alınamadı. Lütfen listeden başka bir kaynak deneyin.";
+          status.innerText = "İçerik alınamadı.";
         }
-      };
-
-      // Dinamik Script Etiketi Oluşturma (CORS Engelini Aşar)
-      const script = document.createElement('script');
-      script.id = 'jsonp-script';
-      script.src = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&callback=${callbackName}`;
-      
-      script.onerror = function() {
-        delete window[callbackName];
-        script.remove();
-        btn.disabled = false;
-        btn.style.opacity = "1";
-        statusEl.className = "status error";
-        statusEl.innerText = "Bağlantı hatası oluştu, lütfen tekrar deneyin.";
-      };
-
-      document.body.appendChild(script);
+      } catch (e) {
+        status.innerText = "Bağlantı hatası.";
+      }
     }
 
-    window.onload = fetchFeed;
+    window.onload = getFeed;
   </script>
 </body>
 </html>
