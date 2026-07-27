@@ -84,12 +84,60 @@
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
+      // YouTube kanalları için özel XML işleme
+      if (selectedKey.endsWith('_yt')) {
+        try {
+          const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`);
+          const data = await res.json();
+          
+          if (data.contents) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(data.contents, "text/xml");
+            const entries = xmlDoc.querySelectorAll("entry");
+
+            if (entries.length > 0) {
+              statusEl.innerText = `${entries.length} adet son içerik/video yüklendi.`;
+
+              entries.forEach(entry => {
+                const title = entry.querySelector("title")?.textContent || "";
+                const pubDate = entry.querySelector("published")?.textContent || "";
+                
+                // YouTube açıklamasını çekme
+                const mediaGroup = entry.getElementsByTagNameNS("http://search.yahoo.com/mrss/", "group")[0];
+                const desc = mediaGroup ? mediaGroup.getElementsByTagNameNS("http://search.yahoo.com/mrss/", "description")[0]?.textContent : "";
+
+                let dateStr = '';
+                if (pubDate) {
+                  const d = new Date(pubDate);
+                  if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
+                }
+
+                const card = document.createElement('article');
+                card.className = 'post-card';
+                card.innerHTML = `
+                  ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
+                  <div class="post-text"><strong>${title.trim()}</strong>${desc ? `\n\n${desc.trim()}` : ''}</div>
+                `;
+                containerEl.appendChild(card);
+              });
+
+              btn.disabled = false;
+              btn.style.opacity = "1";
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("YouTube akışı çekilemedi.");
+        }
+      }
+
+      // Standart RSS Haber Siteleri
       try {
         const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
         const data = await res.json();
 
         if (data.status === 'ok' && data.items && data.items.length > 0) {
-          statusEl.innerText = `${data.items.length} adet yeni paylaşım yüklendi.`;
+          statusEl.innerText = `${data.items.length} adet yeni içerik yüklendi.`;
 
           data.items.forEach(item => {
             const cleanText = cleanHTML(item.description || item.content);
@@ -98,9 +146,7 @@
             let dateStr = '';
             if (item.pubDate) {
               const d = new Date(item.pubDate);
-              if (!isNaN(d.getTime())) {
-                dateStr = d.toLocaleString('tr-TR');
-              }
+              if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
             }
 
             const card = document.createElement('article');
@@ -116,7 +162,7 @@
         }
       } catch (e) {
         statusEl.className = "status error";
-        statusEl.innerText = "İçerik çekilirken bir sorun oluştu, lütfen listedeki diğer kaynakları deneyin.";
+        statusEl.innerText = "İçerik çekilirken bir sorun oluştu, lütfen diğer kaynakları deneyin.";
       }
 
       btn.disabled = false;
