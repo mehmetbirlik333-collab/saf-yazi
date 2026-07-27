@@ -55,11 +55,11 @@
 
   <script>
     const SOURCES = {
-      'aa': 'https://www.aa.com.tr/tr/rss/default?cat=guncel',
-      'trt': 'https://www.trthaber.com/sondakika.rss',
-      'cubbeli_yt': 'https://www.youtube.com/feeds/videos.xml?channel_id=UC43i8xG4ySsm_Xk5S9B1oag',
-      'trt_spor': 'https://www.trtspor.com.tr/rss/',
-      'trt_world': 'https://www.trtworld.com/rss'
+      'aa': { type: 'rss', url: 'https://www.aa.com.tr/tr/rss/default?cat=guncel' },
+      'trt': { type: 'rss', url: 'https://www.trthaber.com/sondakika.rss' },
+      'cubbeli_yt': { type: 'yt', channelId: 'UC43i8xG4ySsm_Xk5S9B1oag' },
+      'trt_spor': { type: 'rss', url: 'https://www.trtspor.com.tr/rss/' },
+      'trt_world': { type: 'rss', url: 'https://www.trtworld.com/rss' }
     };
 
     function cleanHTML(rawHtml) {
@@ -73,7 +73,7 @@
 
     async function fetchFeed() {
       const selectedKey = document.getElementById('source-select').value;
-      const rssUrl = SOURCES[selectedKey];
+      const source = SOURCES[selectedKey];
       const statusEl = document.getElementById('status-text');
       const containerEl = document.getElementById('feed-container');
       const btn = document.getElementById('fetch-btn');
@@ -84,28 +84,22 @@
       btn.disabled = true;
       btn.style.opacity = "0.5";
 
-      // YouTube kanalları için doğrudan corsproxy tüneli
-      if (selectedKey.endsWith('_yt')) {
+      // YOUTUBE ÇEKİM MANTIĞI (Doğrudan Invidious API)
+      if (source.type === 'yt') {
         try {
-          const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(rssUrl)}`);
-          const xmlText = await res.text();
-          const parser = new DOMParser();
-          const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-          const entries = xmlDoc.querySelectorAll("entry");
+          const res = await fetch(`https://invidious.nerdvpn.de/api/v1/channels/${source.channelId}/videos`);
+          const data = await res.json();
 
-          if (entries.length > 0) {
-            statusEl.innerText = `${entries.length} adet yeni içerik yüklendi.`;
+          if (data && data.length > 0) {
+            statusEl.innerText = `${data.length} adet son paylaşım yüklendi.`;
 
-            entries.forEach(entry => {
-              const title = entry.querySelector("title")?.textContent || "";
-              const pubDate = entry.querySelector("published")?.textContent || "";
+            data.forEach(item => {
+              const titleText = item.title ? item.title.trim() : '';
+              const descText = item.description ? item.description.trim() : '';
               
-              const mediaGroup = entry.getElementsByTagNameNS("http://search.yahoo.com/mrss/", "group")[0];
-              const desc = mediaGroup ? mediaGroup.getElementsByTagNameNS("http://search.yahoo.com/mrss/", "description")[0]?.textContent : "";
-
               let dateStr = '';
-              if (pubDate) {
-                const d = new Date(pubDate);
+              if (item.published) {
+                const d = new Date(item.published * 1000);
                 if (!isNaN(d.getTime())) dateStr = d.toLocaleString('tr-TR');
               }
 
@@ -113,7 +107,7 @@
               card.className = 'post-card';
               card.innerHTML = `
                 ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
-                <div class="post-text"><strong>${title.trim()}</strong>${desc ? `\n\n${desc.trim()}` : ''}</div>
+                <div class="post-text"><strong>${titleText}</strong>${descText ? `\n\n${descText}` : ''}</div>
               `;
               containerEl.appendChild(card);
             });
@@ -123,13 +117,13 @@
             return;
           }
         } catch (e) {
-          console.warn("Proxy denemesi başarısız oldu.");
+          console.warn("YouTube verisi çekilemedi.");
         }
       }
 
-      // Standart RSS Haber Siteleri
+      // STANDART RSS HABER SİTELERİ ÇEKİM MANTIĞI
       try {
-        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
+        const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(source.url)}`);
         const data = await res.json();
 
         if (data.status === 'ok' && data.items && data.items.length > 0) {
