@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Saf Yazı Akışı</title>
+  <style>
+    :root {
+      --bg-color: #0f1419;
+      --card-bg: #15202b;
+      --border-color: #38444d;
+      --text-main: #f7f9f9;
+      --text-muted: #8b98a5;
+      --accent: #1d9bf0;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      padding: 16px;
+      max-width: 680px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+
+    header {
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 12px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+
+    button:active {
+      opacity: 0.8;
+    }
+
+    .status {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin: 12px 0;
+    }
+
+    .feed-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .post-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+      word-break: break-word;
+    }
+
+    .post-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .post-text {
+      font-size: 0.95rem;
+      color: var(--text-main);
+      white-space: pre-line;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Saf Yazı Akışı</h1>
+    <div class="controls">
+      <input type="text" id="username-input" placeholder="Kullanıcı adı" value="c_ahmethoca">
+      <button onclick="fetchFeed()">Getir</button>
+    </div>
+    <div class="status" id="status-text">Yükleniyor...</div>
+  </header>
+
+  <main class="feed-list" id="feed-container"></main>
+
+  <script>
+    async function fetchFeed() {
+      let username = document.getElementById('username-input').value.trim();
+      const statusEl = document.getElementById('status-text');
+      const containerEl = document.getElementById('feed-container');
+
+      if (username.startsWith('@')) username = username.substring(1);
+      if (!username) {
+        statusEl.innerText = "Lütfen kullanıcı adı girin.";
+        return;
+      }
+
+      statusEl.innerText = `@${username} paylaşımları sorgulanıyor...`;
+      containerEl.innerHTML = '';
+
+      // CORS engellerini aşmak için proxy köprüleri
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(`https://rsshub.app/twitter/user/${username}`)}`,
+        `https://corsproxy.io/?${encodeURIComponent(`https://nitter.privacydev.net/${username}/rss`)}`,
+        `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(`https://nitter.poast.org/${username}/rss`)}`
+      ];
+
+      let success = false;
+
+      for (const url of proxies) {
+        if (success) break;
+
+        try {
+          const response = await fetch(url);
+          let items = [];
+
+          if (url.includes('rss2json')) {
+            const data = await response.json();
+            if (data.status === 'ok') items = data.items;
+          } else {
+            const xmlText = await response.text();
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+            const xmlItems = xmlDoc.querySelectorAll("item");
+            
+            xmlItems.forEach(item => {
+              items.push({
+                title: item.querySelector("title")?.textContent || "",
+                description: item.querySelector("description")?.textContent || "",
+                pubDate: item.querySelector("pubDate")?.textContent || ""
+              });
+            });
+          }
+
+          if (items && items.length > 0) {
+            statusEl.innerText = `@${username} için ${items.length} içerik listelendi.`;
+
+            items.forEach(item => {
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = item.description || item.title;
+
+              // Görselleri, videoları ve link etiketlerini tamamen kaldır
+              const mediaElements = tempDiv.querySelectorAll('img, video, iframe, a, style, script');
+              mediaElements.forEach(el => el.remove());
+
+              const cleanText = tempDiv.innerText.trim();
+              const dateStr = item.pubDate ? new Date(item.pubDate).toLocaleString('tr-TR') : '';
+
+              if (cleanText.length > 0 && cleanText !== "RT") {
+                const card = document.createElement('article');
+                card.className = 'post-card';
+                card.innerHTML = `
+                  ${dateStr ? `<div class="post-date">${dateStr}</div>` : ''}
+                  <div class="post-text">${cleanText}</div>
+                `;
+                containerEl.appendChild(card);
+              }
+            });
+
+            success = true;
+          }
+        } catch (err) {
+          console.warn("Alternatif sunucu deneniyor...");
+        }
+      }
+
+      if (!success) {
+        statusEl.innerText = "Veri alınamadı. Lütfen dosyayı tarayıcıda doğrudan açmak yerine GitHub Pages üzerinden yükleyip çalıştırın.";
+      }
+    }
+
+    window.onload = fetchFeed;
+  </script>
+</body>
+</html>
